@@ -70,47 +70,47 @@ int main()
 				double i = 0;
 				_asm
 				{
-					finit;						//инициализаци€ сопроцессора
-					fld sizeOfArr				//помещаем в стек значение sizeOfArr
-					mov esi, 0					//обнул€ем esi
-					fld i;						//помещаем в стек значение i
+					finit;						
+					fld sizeOfArr				
+					mov esi, 0					
+					fld i;						
 				loop_start:
-					fcom	 					//сравниваем ST(0) и ST(1)
-					fstsw ax					//в ax - регистр состо€ни€
-					and ah, 01000101b			//== провер€ем бит 8(—0), 10(C2)
-					je loop_end					// если 0 - конец цикла
+					fcom	 					
+					fstsw ax					
+					and ah, 01000101b			
+					je loop_end					
 
 	
 						
 					
-					fld[arr + esi]				//помещаем число в стек элемент массива
+					fld[arr + esi]				
 					fcom zero
-					fstsw ax					//в ax - регистр состо€ни€
-					and ah, 01000101b;			//>0 провер€ем биты 8(—0), 10(—2), 14(c3)
-					je greaterZ					//если ZF = 1
-					jmp lessZ					//если ZF != 1
+					fstsw ax					
+					and ah, 01000101b;			
+					je greaterZ					
+					jmp lessZ					
 				greaterZ:
-					fmul[arr + esi]				//ST(0)*arr[esi], результат в ST(0), возводим в квадрат
+					fmul[arr + esi]				
 					fstsw ax					
 					and al, 00001000b			
-					jne overflow				//провер€ем флаг OE
-					fmul[arr + esi]				//ST(0)*arr[esi], результат в ST(0), возводим в куб
+					jne overflow				
+					fmul[arr + esi]				
 					fstsw ax
 					and al, 00001000b
 					jne overflow
-					fstp[resultArrFPU + esi]	//заносим результат в массив с результатами с выталкиванием из стека
+					fstp[resultArrFPU + esi]	
 					jmp next_step;
 				lessZ:
-					fmul[arr + esi]				//ST(0)*arr[esi], результат в ST(0), возводим в квадрат
+					fmul[arr + esi]				
 					fstsw ax
 					and al, 00001000b
 					jne overflow
-					fstp[resultArrFPU + esi]	//заносим результат в массив с результатами с выталкиванием из стека
+					fstp[resultArrFPU + esi]	
 					jmp next_step
 				next_step:
 					fadd step
-					fst i						//сохранение вершины стека в i
-					add esi, 8					//esi += 8, т.к. работаем с типом данных double
+					fst i						
+					add esi, 8					
 					jmp loop_start
 				overflow:
 					fwait

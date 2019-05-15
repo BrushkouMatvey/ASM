@@ -423,7 +423,4 @@ start:
 end_main:
 	exit_app 
 
-end start         
-    
-
-
+end start

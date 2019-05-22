@@ -1,12 +1,13 @@
 .model tiny
 .code
+.386
 org 100h 
 
 begin:
     jmp start
 
 
-macro is_empty_line text_line, marker  
+is_empty_line macro text_line, marker  
     push si
     
     mov si, offset text_line
@@ -25,7 +26,7 @@ get_part_time macro source, receiver
       mov receiver, al
 endm                 
 
-macro show_str out_str
+show_str macro out_str
     push ax
     push dx
     
@@ -45,7 +46,7 @@ macro show_str out_str
     pop ax
 endm  
  
-macro read_cmd
+read_cmd macro
     xor ch, ch
     mov cl, ds:[80h] ; number of symbols in cmd                 
     mov cmd_size, cl ;      
@@ -68,6 +69,7 @@ cmd_text                db max_size + 2 dup(0)
 number_text             db max_size + 2 dup(0)
           
 num_10                  db 10
+one_million             dd 1000000
 old_handler             dd ?
    
 temp_length             dw 0     
@@ -75,7 +77,14 @@ alarm_hours             db 0
 alarm_minutes           db 0 
 alarm_seconds           db 0
 signal_duration         dw 0    
-buffer                  db max_size + 2 dup(0) 
+buffer                  db max_size + 2 dup(0)
+
+BCD_duration            db 0
+BCD_time_hour           db 0
+BCD_time_minutes        db 0
+BCD_time_seconds        db 0  
+
+
 
 strlen proc
     push bx
@@ -138,7 +147,7 @@ m1:
     pop ax 
     ret
    ;popa 
-endm
+endp
 
 rewrite_word proc
     push ax
@@ -171,7 +180,22 @@ is_stopped_char:
     pop cx
     pop ax
     ret
-endp    
+endp
+
+to_BCD macro num
+    mov al, num
+    mov si, 10
+    mov dx, 0
+    div si    ;в ax будет i 
+    mov bx, ax  ;сохраним временно i
+    mul si  ; в ax будет i*10 
+    mov cl, num
+    sub cx, ax   ; в cx разность decimal и i*10  
+    shl bx, 4    ; в bx сдвиг на 4 позиции влево
+    add bx, cx
+endm 
+
+
 
 read_from_cmd proc
     push bx
@@ -249,6 +273,12 @@ endp
 
 Speaker_On proc near
     push ax
+    mov al,10110110b
+    out 43h,al
+    mov al,0Dh
+    out 42h,al
+    mov al,11h
+    out 42h,al
     in al, 61h ;read port
     or al, 00000011b;bits 0 and 1 into 1
     out 61h, al
@@ -266,8 +296,17 @@ Speaker_Off proc near
 Speaker_Off endp
 
 beep proc
+    
+      
+    xor eax, eax 
+    mov ax, cs:signal_duration
+    mul cs:one_million
+    mov dx, ax
+    shr eax, 16
+    mov cx, ax
+    
     call Speaker_On
-    xor cx, cx  
+    mov ah, 86h  
     int 15h
     call Speaker_Off
 endp    
@@ -291,11 +330,13 @@ int_handler proc far
     cli
     push dx
     push ax
-    push bx
-    ;mov ax, 1000
-;    mov bx, signal_duration
-;    mul bx  
-;    call beep 
+    push bx 
+    
+    mov ax, 1000
+    mov bx, signal_duration
+    
+    call beep
+     
     show_str message
     pop bx
     pop ax 
@@ -304,12 +345,12 @@ endp
 
 set_alarm proc
     pusha   
-    mov ah,07h       ; перед тем как установить сбрасываем его
+    mov ah,07h       ; ????? ??? ??? ?????????? ?????????? ???
     int 1Ah 
     mov ah, 06h
-    mov ch, alarm_hours
-    mov cl, alarm_minutes
-    mov dh, alarm_seconds
+    mov ch, BCD_time_hour
+    mov cl, BCD_time_minutes
+    mov dh, BCD_time_seconds
     int 1Ah 
     popa
     ret
@@ -321,7 +362,15 @@ start:
     read_cmd
     mov ds, ax 
     
-    call read_from_cmd 
+    call read_from_cmd
+    
+    to_BCD alarm_hours
+    mov BCD_time_hour, bl
+    to_BCD alarm_minutes
+    mov BCD_time_minutes, bl
+    to_BCD alarm_seconds
+    mov BCD_time_seconds, bl 
+    
     call set_alarm
     mov ax, 354Ah ;get old_handler to bx
     int 21h

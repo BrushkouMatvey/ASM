@@ -25,29 +25,6 @@ get_part_time macro source, receiver
       mov receiver, al
 endm                 
 
-print macro offs 
-    lea dx, offs
-    mov ah, 9h
-    int 21h
-endm print 
-
-;value - bcd number, source - place for result  
-bcd_to_int macro value, source
-      pusha                     
-      
-      mov al,value
-      and al,00001111b    ;younger 4 bits
-      add al, '0'         ;from string to number
-      mov cs:source[2], al     ;write first digit into time string
-
-      mov al,value
-      shr al, 4           ;>>4, now we have older 4 bits
-      add al, '0'         ;string into number
-      mov cs:source[0], al    ;write secind digit
-        
-      popa     
-endm
-
 macro show_str out_str
     push ax
     push dx
@@ -315,17 +292,20 @@ int_handler proc far
     push dx
     push ax
     push bx
-    mov ax, 1000
-    mov bx, signal_duration
-    mul bx  
-    call beep
+    ;mov ax, 1000
+;    mov bx, signal_duration
+;    mul bx  
+;    call beep 
+    show_str message
     pop bx
     pop ax 
     pop dx
 endp
 
 set_alarm proc
-    pusha
+    pusha   
+    mov ah,07h       ; перед тем как установить сбрасываем его
+    int 1Ah 
     mov ah, 06h
     mov ch, alarm_hours
     mov cl, alarm_minutes
@@ -341,7 +321,8 @@ start:
     read_cmd
     mov ds, ax 
     
-    call read_from_cmd
+    call read_from_cmd 
+    call set_alarm
     mov ax, 354Ah ;get old_handler to bx
     int 21h
     
@@ -351,9 +332,6 @@ start:
     mov ax, 254Ah
     lea dx, int_handler
     int 21h
-    
-    call set_alarm
-    
     jmp finish
 
 finish:

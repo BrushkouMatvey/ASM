@@ -1,6 +1,5 @@
 .model tiny
 .code
-.386
 org 100h 
 
 begin:
@@ -16,15 +15,7 @@ is_empty_line macro text_line, marker
     pop si
     cmp ax, 0    
     je marker 
-endm
-
-;source - number of register, reciver - register for result value 
-get_part_time macro source, receiver
-      mov al, source
-      out 70h, al       ;print register into port
-      in al, 71h        ;get info from register
-      mov receiver, al
-endm                 
+endm              
 
 show_str macro out_str
     push ax
@@ -56,7 +47,6 @@ read_cmd macro
 endm
    
 bad_params_message      db "Bad cmd arguments", '$'
-message                 db "my message", '$'
 space_char              equ 32  
 new_line_char           equ 13
 return_char             equ 10
@@ -69,20 +59,21 @@ cmd_text                db max_size + 2 dup(0)
 number_text             db max_size + 2 dup(0)
           
 num_10                  db 10
-one_million             dd 1000000
 old_handler             dd ?
    
 temp_length             dw 0     
 alarm_hours             db 0   
 alarm_minutes           db 0 
 alarm_seconds           db 0
-signal_duration         dw 0    
+signal_duration         db 0    
 buffer                  db max_size + 2 dup(0)
 
-BCD_duration            db 0
-BCD_time_hour           db 0
-BCD_time_minutes        db 0
-BCD_time_seconds        db 0  
+flag db ? 
+time_sec db ?   
+time_min db ?
+time_hour db ?
+prev_sec db ?         
+count db ? 
 
 
 
@@ -145,8 +136,7 @@ m1:
     pop cx
     pop bx
     pop ax 
-    ret
-   ;popa 
+    ret 
 endp
 
 rewrite_word proc
@@ -182,19 +172,23 @@ is_stopped_char:
     ret
 endp
 
-to_BCD macro num
+int_to_bcd macro num
+    pusha
+    
     mov al, num
     mov si, 10
     mov dx, 0
-    div si    ;в ax будет i 
-    mov bx, ax  ;сохраним временно i
-    mul si  ; в ax будет i*10 
+    div si     
+    mov bx, ax  
+    mul si  
     mov cl, num
-    sub cx, ax   ; в cx разность decimal и i*10  
-    shl bx, 4    ; в bx сдвиг на 4 позиции влево
+    sub cx, ax   
+    shl bx, 4  
     add bx, cx
-endm 
-
+    
+    mov num, bl
+    popa
+endm
 
 
 read_from_cmd proc
@@ -219,33 +213,36 @@ next_word:
     call conv 
     mov alarm_minutes, dl
     is_empty_line number_text bad_cmd
-    
+     
     mov di, offset number_text
     call rewrite_word 
     call conv
     mov alarm_seconds, dl 
     is_empty_line number_text bad_cmd
-
+    
     mov di, offset number_text
     call rewrite_word 
     call conv        
-    mov signal_duration, dx 
+    mov signal_duration, dl 
     is_empty_line number_text bad_cmd 
-    
+    ;int_to_bcd signal_duration
     pusha      
     mov al, alarm_hours
     cmp al, 24
-    jae bad_cmd 
+    jae bad_cmd  
+    int_to_bcd alarm_hours
     
     mov al, alarm_minutes
     cmp al, 60
-    jae bad_cmd 
+    jae bad_cmd  
+    int_to_bcd alarm_minutes
     
     mov al, alarm_seconds
     cmp al, 60
-    jae bad_cmd
+    jae bad_cmd 
+    int_to_bcd alarm_seconds 
 
-    mov ax, signal_duration
+    mov al, signal_duration
     cmp ax, 10
     jae bad_cmd
     popa
@@ -279,10 +276,10 @@ Speaker_On proc near
     out 42h,al
     mov al,11h
     out 42h,al
-    in al, 61h ;read port
-    or al, 00000011b;bits 0 and 1 into 1
+    in al, 61h 
+    or al, 00000011b
     out 61h, al
-    pop ax
+    pop ax  
     ret
 Speaker_On endp
 
@@ -294,67 +291,81 @@ Speaker_Off proc near
     pop ax
     ret
 Speaker_Off endp
+     
+
+get_time proc                ;read current time from rtc
+      pusha       
+      
+      mov ah, 02h
+      int 1ah
+      
+      mov time_sec, dh
+      mov time_min, cl
+      mov time_hour, ch  
+
+      popa
+      ret
+endp
 
 beep proc
-    
+      pusha
+      pushf
+      push ds
+      push es 
       
-    xor eax, eax 
-    mov ax, cs:signal_duration
-    mul cs:one_million
-    mov dx, ax
-    shr eax, 16
-    mov cx, ax
-    
-    call Speaker_On
-    mov ah, 86h  
-    int 15h
-    call Speaker_Off
-endp    
-
-get_time proc
-    pusha
-    get_part_time 0, dl ;seconds 
-    ;bcd_to_int dl, time_str[12]
-    
-    get_part_time 2, dl ;minutes
-    ;bcd_to_int dl, time_str[6]
-    
-    get_part_time 4, dl ;hours
-    ;bcd_to_int dl, time_str[0]
-    popa
-    ret
+      cmp cs:flag, 1
+      je check_timer 
+      
+      mov al, time_hour
+      cmp al, cs:alarm_hours
+      jne no_alarm      
+      
+      mov al, time_min
+      cmp al, cs:alarm_minutes
+      jne no_alarm
+      
+      mov al, time_sec
+      cmp al, cs:alarm_seconds
+      jne no_alarm
+      
+      
+      mov cs:flag, 1
+      call Speaker_On 
+      mov cs:count, 0
+      mov cs:prev_sec, al
+      jmp no_alarm  
+      
+check_timer:
+      mov al, time_sec 
+      cmp cs:prev_sec, al          
+      je no_alarm 
+      mov cs:prev_sec, al 
+      
+      mov bl, cs:count 
+      inc bl
+      mov cs:count, bl    
+      
+      cmp bl, cs:signal_duration
+      jne no_alarm    
+      mov cs:flag, 0 
+      mov cs:count, 0 
+      call Speaker_Off
+      
+no_alarm:
+      pop es
+      pop ds
+      popf
+      popa
+      ret
 endp    
 
 int_handler proc far 
-    pushf
     cli
-    push dx
-    push ax
-    push bx 
-    
-    mov ax, 1000
-    mov bx, signal_duration
-    
+    call get_time
     call beep
-     
-    show_str message
-    pop bx
-    pop ax 
-    pop dx
+    sti 
+    iret
 endp
-
-set_alarm proc
-    pusha   
-    mov ah,07h       ; ????? ??? ??? ?????????? ?????????? ???
-    int 1Ah 
-    mov ah, 06h
-    mov ch, BCD_time_hour
-    mov cl, BCD_time_minutes
-    mov dh, BCD_time_seconds
-    int 1Ah 
-    popa
-    ret
-endp     
 
 start:
     mov ax, cs
@@ -364,21 +375,12 @@ start:
     
     call read_from_cmd
     
-    to_BCD alarm_hours
-    mov BCD_time_hour, bl
-    to_BCD alarm_minutes
-    mov BCD_time_minutes, bl
-    to_BCD alarm_seconds
-    mov BCD_time_seconds, bl 
-    
-    call set_alarm
-    mov ax, 354Ah ;get old_handler to bx
-    int 21h
+    mov ax, 351Ch
+    int 21h                
     
     mov word ptr old_handler, bx ;save old_handler
     mov word ptr old_handler + 2, es
-    
-    mov ax, 254Ah
+    mov ax, 251Ch 
     lea dx, int_handler
     int 21h
     jmp finish
